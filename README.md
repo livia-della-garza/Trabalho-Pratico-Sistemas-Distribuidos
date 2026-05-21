@@ -25,7 +25,7 @@ A proposta busca reduzir o tempo gasto na busca manual por informações e facil
     - FastMCP v3.3.1
 - **Banco de dados**:
     - **Vetorial**: ChromaDB 1.5.9
-    - **Relacional**: 
+    - **Relacional**: PostgreSQL 18.4
 - **Frontend**: Streamlit 1.57.0
 
 ---
@@ -95,3 +95,12 @@ Atende perguntas classificadas como **RAG**: o usuário quer informação basead
 ### Resposta padrão
 
 ![Fluxo da resposta](/docs/diagrams/sequence/fallback-response-service-sequence.svg)
+
+---
+
+## Grupo
+
+- Lívia Della Garza Silva, 
+- Eduardo Cesar Cauduro Coelho,
+- Felipe Geraldo de Oliveira,
+- Vitor Gabriel Firmino
