@@ -1,0 +1,154 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: academic
+      POSTGRES_PASSWORD: academic
+      POSTGRES_DB: academic_assistant
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U academic -d academic_assistant"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - academic-net
+
+  chromadb:
+    image: chromadb/chroma:0.6.3
+    ports:
+      - "8004:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    networks:
+      - academic-net
+
+  routing:
+    build:
+      context: .
+      dockerfile: src/services/routing/Dockerfile
+    environment: &app-env
+      POSTGRES_DSN: postgresql://academic:academic@postgres:5432/academic_assistant
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: "8000"
+      OLLAMA_ENABLED: ${OLLAMA_ENABLED:-false}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Defina GEMINI_API_KEY no arquivo .env}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      GEMINI_EMBED_MODEL: ${GEMINI_EMBED_MODEL:-models/text-embedding-004}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    ports:
+      - "8001:8001"
+    networks:
+      - academic-net
+
+  fallback:
+    build:
+      context: .
+      dockerfile: src/services/fallback/Dockerfile
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8002:8002"
+    networks:
+      - academic-net
+
+  rag:
+    build:
+      context: .
+      dockerfile: src/services/rag/Dockerfile
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    ports:
+      - "8003:8003"
+    networks:
+      - academic-net
+
+  gateway:
+    build:
+      context: .
+      dockerfile: src/services/gateway/Dockerfile
+    environment:
+      <<: *app-env
+      ROUTING_URL: http://routing:8001
+      FALLBACK_URL: http://fallback:8002
+      RAG_URL: http://rag:8003
+    depends_on:
+      - routing
+      - fallback
+      - rag
+    ports:
+      - "8000:8000"
+    networks:
+      - academic-net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: src/services/frontend/Dockerfile
+    environment:
+      GATEWAY_WS_URL: ws://gateway:8000/ws
+    depends_on:
+      - gateway
+    ports:
+      - "8501:8501"
+    networks:
+      - academic-net
+
+  seed:
+    build:
+      context: .
+      dockerfile: src/services/routing/Dockerfile
+    environment:
+      <<: *app-env
+    depends_on:
+      chromadb:
+        condition: service_started
+    command: ["python", "-m", "scripts.seed_routing_examples"]
+    profiles:
+      - tools
+    networks:
+      - academic-net
+
+  indexer:
+    build:
+      context: .
+      dockerfile: src/services/rag/Dockerfile
+    environment:
+      <<: *app-env
+    volumes:
+      - ./data/pdfs:/app/data/pdfs:ro
+    depends_on:
+      chromadb:
+        condition: service_started
+    command: ["python", "-m", "indexing"]
+    profiles:
+      - tools
+    networks:
+      - academic-net
+
+networks:
+  academic-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  chroma_data:
