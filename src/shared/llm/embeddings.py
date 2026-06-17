@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def _ollama_reachable(base_url: str) -> bool:
     try:
-        response = httpx.get(f"{base_url.rstrip('/')}/api/tags", timeout=2.0)
+        response = httpx.get(f"{base_url.rstrip('/')}/api/tags", timeout=5.0)
         return response.status_code == 200
     except (httpx.HTTPError, OSError):
         return False
@@ -30,18 +30,11 @@ def get_embeddings() -> Embeddings:
             base_url=settings.ollama_base_url,
         )
 
-    if settings.gemini_api_key:
-        from langchain_google_genai import GoogleGenerativeAIEmbeddings
-
-        logger.info("Usando Gemini Embeddings (%s)", settings.gemini_embed_model)
-        return GoogleGenerativeAIEmbeddings(
-            model=settings.gemini_embed_model,
-            google_api_key=settings.gemini_api_key,
-        )
-
     from shared.llm.hash_embeddings import HashEmbeddings
 
-    logger.warning("Sem Ollama/Gemini; usando HashEmbeddings para desenvolvimento")
+    logger.warning(
+        "Ollama indisponível; usando HashEmbeddings (apenas desenvolvimento)"
+    )
     return HashEmbeddings(size=384)
 
 
@@ -56,16 +49,24 @@ def get_chat_model() -> BaseChatModel | None:
             base_url=settings.ollama_base_url,
         )
 
-    if settings.gemini_api_key:
-        from langchain_google_genai import ChatGoogleGenerativeAI
+    return None
 
-        logger.info("Usando Gemini (%s)", settings.gemini_model)
-        return ChatGoogleGenerativeAI(
-            model=settings.gemini_model,
-            google_api_key=settings.gemini_api_key,
+
+def _stub_rag_response(trechos: list[str], aviso_llm: str | None = None) -> str:
+    if not trechos:
+        return (
+            "[modo sem LLM] Não encontrei trechos relevantes nos documentos indexados. "
+            "Adicione arquivos em data/md/ ou data/pdfs/ e execute o indexer."
         )
 
-    return None
+    resumo = "\n".join(
+        f"- {trecho[:400]}{'...' if len(trecho) > 400 else ''}" for trecho in trechos
+    )
+    aviso = aviso_llm or (
+        "Inicie o Ollama e baixe qwen3-embedding:0.6b e qwen3.5:0.8b "
+        "para respostas geradas por modelo de linguagem."
+    )
+    return f"[modo sem LLM] Com base nos trechos recuperados:\n\n{resumo}\n\n{aviso}"
 
 
 def generate_rag_response(pergunta: str, trechos: list[str]) -> str:
@@ -90,21 +91,17 @@ def generate_rag_response(pergunta: str, trechos: list[str]) -> str:
                 )
             ),
         ]
-        result: Any = chat_model.invoke(messages)
-        return str(result.content)
+        try:
+            result: Any = chat_model.invoke(messages)
+            return str(result.content)
+        except Exception as exc:
+            logger.warning("LLM indisponível (%s); usando fallback com trechos", exc)
+            return _stub_rag_response(
+                trechos,
+                aviso_llm=(
+                    "O modelo Ollama está indisponível no momento. "
+                    "Verifique se qwen3.5:0.8b e qwen3-embedding:0.6b foram baixados."
+                ),
+            )
 
-    if not trechos:
-        return (
-            "[modo sem LLM] Não encontrei trechos relevantes nos documentos indexados. "
-            "Adicione PDFs em data/pdfs/ e execute o indexer."
-        )
-
-    resumo = "\n".join(
-        f"- {trecho[:400]}{'...' if len(trecho) > 400 else ''}" for trecho in trechos
-    )
-    return (
-        "[modo sem LLM] Com base nos trechos recuperados:\n\n"
-        f"{resumo}\n\n"
-        "Configure GEMINI_API_KEY no .env ou ative Ollama para respostas "
-        "geradas por modelo de linguagem."
-    )
+    return _stub_rag_response(trechos)
