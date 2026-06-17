@@ -274,7 +274,7 @@ docker compose --profile tools run --rm indexer
 
 | Job | Função |
 |-----|--------|
-| `ollama-pull` | Baixa `qwen3-embedding:0.6b` e `qwen3.5:0.8b` |
+| `ollama-pull` | Baixa `qwen3-embedding:0.6b` no container Ollama (volume Docker) |
 | `seed` | Popula exemplos FIM/RAG no Chroma (roteamento) |
 | `indexer` | Indexa normas de `data/md/` (e PDFs em `data/pdfs/`) |
 
@@ -324,28 +324,14 @@ docker compose up -d routing
 curl http://localhost:8001/health
 ```
 
-### Ollama (LLM e embeddings locais)
+### Modelos (Ollama + Gemini)
 
-Todo o pipeline usa **Ollama** dentro do Docker:
+| Papel | Provedor | Modelo |
+|-------|----------|--------|
+| Embeddings | Ollama (container Docker) | `qwen3-embedding:0.6b` (~640 MB) |
+| Chat (RAG) | Gemini API | `gemini-2.0-flash` |
 
-| Papel | Modelo | Tamanho (disco) |
-|-------|--------|-----------------|
-| Embeddings | `qwen3-embedding:0.6b` | ~640 MB |
-| Chat (RAG) | `qwen3.5:0.8b` | ~1 GB |
-
-**RAM recomendada**
-
-| Cenário | RAM |
-|---------|-----|
-| Mínimo | **8 GB** |
-| Confortável | **12 GB** |
-| Ideal | **16 GB** |
-
-Estimativa de uso em execução:
-
-- Ollama (embedding + chat): **~2–3 GB**
-- 3× PostgreSQL + ChromaDB + microsserviços: **~1–2 GB**
-- SO + Docker: **~1–2 GB**
+O job `ollama-pull` baixa o modelo de embedding **no volume do container Ollama**, não no host. Configure `GEMINI_API_KEY` no `.env` para respostas do RAG.
 
 Variáveis:
 
@@ -353,14 +339,14 @@ Variáveis:
 OLLAMA_ENABLED=true
 OLLAMA_BASE_URL=http://ollama:11434   # dentro do Docker
 OLLAMA_EMBED_MODEL=qwen3-embedding:0.6b
-OLLAMA_CHAT_MODEL=qwen3.5:0.8b
+GEMINI_API_KEY=sua-chave-aqui
+GEMINI_MODEL=gemini-2.0-flash
 ```
 
-Baixar modelos manualmente (fora do compose):
+Baixar embedding manualmente (no container Ollama):
 
 ```bash
 docker compose exec ollama ollama pull qwen3-embedding:0.6b
-docker compose exec ollama ollama pull qwen3.5:0.8b
 ```
 
 ### Chunking estrutural (RAG)

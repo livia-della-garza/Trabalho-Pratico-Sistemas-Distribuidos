@@ -40,13 +40,13 @@ def get_embeddings() -> Embeddings:
 
 def get_chat_model() -> BaseChatModel | None:
     settings = get_settings()
-    if settings.ollama_enabled and _ollama_reachable(settings.ollama_base_url):
-        from langchain_ollama import ChatOllama
+    if settings.gemini_api_key:
+        from langchain_google_genai import ChatGoogleGenerativeAI
 
-        logger.info("Usando ChatOllama (%s)", settings.ollama_chat_model)
-        return ChatOllama(
-            model=settings.ollama_chat_model,
-            base_url=settings.ollama_base_url,
+        logger.info("Usando Gemini (%s)", settings.gemini_model)
+        return ChatGoogleGenerativeAI(
+            model=settings.gemini_model,
+            google_api_key=settings.gemini_api_key,
         )
 
     return None
@@ -63,8 +63,8 @@ def _stub_rag_response(trechos: list[str], aviso_llm: str | None = None) -> str:
         f"- {trecho[:400]}{'...' if len(trecho) > 400 else ''}" for trecho in trechos
     )
     aviso = aviso_llm or (
-        "Inicie o Ollama e baixe qwen3-embedding:0.6b e qwen3.5:0.8b "
-        "para respostas geradas por modelo de linguagem."
+        "Configure GEMINI_API_KEY no .env para respostas geradas "
+        "por modelo de linguagem."
     )
     return f"[modo sem LLM] Com base nos trechos recuperados:\n\n{resumo}\n\n{aviso}"
 
@@ -99,8 +99,8 @@ def generate_rag_response(pergunta: str, trechos: list[str]) -> str:
             return _stub_rag_response(
                 trechos,
                 aviso_llm=(
-                    "O modelo Ollama está indisponível no momento. "
-                    "Verifique se qwen3.5:0.8b e qwen3-embedding:0.6b foram baixados."
+                    "O Gemini está indisponível no momento "
+                    "(cota da API ou chave inválida). Tente novamente mais tarde."
                 ),
             )
 

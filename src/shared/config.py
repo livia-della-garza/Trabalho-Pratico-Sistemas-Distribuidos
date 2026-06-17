@@ -11,8 +11,12 @@ class Settings:
     def __init__(self) -> None:
         self.ollama_enabled = os.getenv("OLLAMA_ENABLED", "true").lower() == "true"
         self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
-        self.ollama_embed_model = os.getenv("OLLAMA_EMBED_MODEL", "qwen3-embedding:0.6b")
-        self.ollama_chat_model = os.getenv("OLLAMA_CHAT_MODEL", "qwen3.5:0.8b")
+        self.ollama_embed_model = os.getenv(
+            "OLLAMA_EMBED_MODEL", "qwen3-embedding:0.6b"
+        )
+
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
         self.chroma_host = os.getenv("CHROMA_HOST", "localhost")
         self.chroma_port = int(os.getenv("CHROMA_PORT", "8004"))
