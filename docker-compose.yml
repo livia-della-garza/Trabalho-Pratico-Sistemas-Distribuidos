@@ -1,16 +1,69 @@
+x-embed-chroma-env: &embed-chroma-env
+  OLLAMA_ENABLED: ${OLLAMA_ENABLED:-true}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+  OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-qwen3-embedding:0.6b}
+  OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen3.5:0.8b}
+  CHROMA_HOST: chromadb
+  CHROMA_PORT: "8000"
+
 services:
-  postgres:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - academic-net
+
+  postgres-routing:
     image: postgres:16
     environment:
       POSTGRES_USER: academic
       POSTGRES_PASSWORD: academic
-      POSTGRES_DB: academic_assistant
+      POSTGRES_DB: routing
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_routing_data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U academic -d academic_assistant"]
+      test: ["CMD-SHELL", "pg_isready -U academic -d routing"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - academic-net
+
+  postgres-fallback:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: academic
+      POSTGRES_PASSWORD: academic
+      POSTGRES_DB: fallback
+    volumes:
+      - postgres_fallback_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U academic -d fallback"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - academic-net
+
+  postgres-rag:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: academic
+      POSTGRES_PASSWORD: academic
+      POSTGRES_DB: rag
+    volumes:
+      - postgres_rag_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U academic -d rag"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -33,19 +86,15 @@ services:
     build:
       context: .
       dockerfile: src/services/routing/Dockerfile
-    environment: &app-env
-      POSTGRES_DSN: postgresql://academic:academic@postgres:5432/academic_assistant
-      CHROMA_HOST: chromadb
-      CHROMA_PORT: "8000"
-      OLLAMA_ENABLED: ${OLLAMA_ENABLED:-false}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:?Defina GEMINI_API_KEY no arquivo .env}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
-      GEMINI_EMBED_MODEL: ${GEMINI_EMBED_MODEL:-models/text-embedding-004}
+    environment:
+      <<: *embed-chroma-env
+      ROUTING_POSTGRES_DSN: postgresql://academic:academic@postgres-routing:5432/routing
     depends_on:
-      postgres:
+      postgres-routing:
         condition: service_healthy
       chromadb:
+        condition: service_started
+      ollama:
         condition: service_started
     ports:
       - "8001:8001"
@@ -57,9 +106,9 @@ services:
       context: .
       dockerfile: src/services/fallback/Dockerfile
     environment:
-      <<: *app-env
+      FALLBACK_POSTGRES_DSN: postgresql://academic:academic@postgres-fallback:5432/fallback
     depends_on:
-      postgres:
+      postgres-fallback:
         condition: service_healthy
     ports:
       - "8002:8002"
@@ -71,11 +120,14 @@ services:
       context: .
       dockerfile: src/services/rag/Dockerfile
     environment:
-      <<: *app-env
+      <<: *embed-chroma-env
+      RAG_POSTGRES_DSN: postgresql://academic:academic@postgres-rag:5432/rag
     depends_on:
-      postgres:
+      postgres-rag:
         condition: service_healthy
       chromadb:
+        condition: service_started
+      ollama:
         condition: service_started
     ports:
       - "8003:8003"
@@ -87,7 +139,6 @@ services:
       context: .
       dockerfile: src/services/gateway/Dockerfile
     environment:
-      <<: *app-env
       ROUTING_URL: http://routing:8001
       FALLBACK_URL: http://fallback:8002
       RAG_URL: http://rag:8003
@@ -113,14 +164,33 @@ services:
     networks:
       - academic-net
 
+  ollama-pull:
+    image: curlimages/curl:latest
+    depends_on:
+      ollama:
+        condition: service_started
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-qwen3-embedding:0.6b}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen3.5:0.8b}
+    volumes:
+      - ./docker/ollama-pull.sh:/ollama-pull.sh:ro
+    entrypoint: ["/bin/sh", "/ollama-pull.sh"]
+    profiles:
+      - tools
+    networks:
+      - academic-net
+
   seed:
     build:
       context: .
       dockerfile: src/services/routing/Dockerfile
     environment:
-      <<: *app-env
+      <<: *embed-chroma-env
     depends_on:
       chromadb:
+        condition: service_started
+      ollama:
         condition: service_started
     command: ["python", "-m", "scripts.seed_routing_examples"]
     profiles:
@@ -133,11 +203,14 @@ services:
       context: .
       dockerfile: src/services/rag/Dockerfile
     environment:
-      <<: *app-env
+      <<: *embed-chroma-env
     volumes:
+      - ./data/md:/app/data/md:ro
       - ./data/pdfs:/app/data/pdfs:ro
     depends_on:
       chromadb:
+        condition: service_started
+      ollama:
         condition: service_started
     command: ["python", "-m", "indexing"]
     profiles:
@@ -150,5 +223,8 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
+  ollama_data:
+  postgres_routing_data:
+  postgres_fallback_data:
+  postgres_rag_data:
   chroma_data:
