@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from shared.chroma_client import get_vectorstore
 from shared.config import get_settings
-from shared.db.postgres import RoutingLog, get_session, init_db
+from shared.db.routing import RoutingLog, get_session, init_db
 from shared.models import ClassificarResponse, PerguntaRequest, Rota
 
 logger = logging.getLogger(__name__)

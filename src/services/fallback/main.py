@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from sqlalchemy.orm import Session
 
-from shared.db.postgres import FimInteraction, get_session, init_db
+from shared.db.fallback import FimInteraction, get_session, init_db
 from shared.models import PerguntaRequest, ResponderResponse
 
 logger = logging.getLogger(__name__)

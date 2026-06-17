@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from shared.chroma_client import get_vectorstore
 from shared.config import get_settings
-from shared.db.postgres import RagInteraction, get_session, init_db
+from shared.db.rag import RagInteraction, get_session, init_db
 from shared.llm.embeddings import generate_rag_response
 from shared.models import FonteDocumento, PerguntaRequest, ProcessarResponse
 
